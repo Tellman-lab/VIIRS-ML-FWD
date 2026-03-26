@@ -27,7 +27,7 @@ __Note:__ folders in the project structure marked with a leading asterisk are ig
 ## Setup
 
 1) __Clone repository__: ```git clone https://github.com/Tellman-lab/VIIRS-ML-FWD.git``` and navigate to the repository ```cd VIIRS-ML-FWD```.
-2) __Create a Python environment and install dependencies__: ```conda env create -f environment.yml```.
+2) __Create an environment and install Python dependencies__: ```conda env create -f environment.yml``` will create a new environment called ```viirs-ml-fwd```.
 3) __Download the model weights file:__ from the [Releases](https://github.com/Tellman-lab/VIIRSGlobalFlood/releases/tag/v1.0.0) page and save the file ```model.pth``` in a folder named ```ModelWeights``` in the root path of this repository.
 4) __Create a NASA Earth Data [account](https://urs.earthdata.nasa.gov/profile):__ to be able to download VIIRS scenes from NASA LAADS-DAAC.
    
