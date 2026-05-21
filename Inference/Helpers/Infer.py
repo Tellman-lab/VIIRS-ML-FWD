@@ -59,7 +59,7 @@ def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTif
     acc_metric = [mae, mse, rmse, R2Score()]
     loss_fn = L1LossFlat()
     learn = Learner(dl, model, loss_func = loss_fn, metrics=acc_metric, opt_func=ranger)
-    learn.load(modelPath)
+    learn.load(modelPath, weights_only=False)
     print(f'Loaded model.')
 
     # Get predictions and save to raster in batches of max 1000 files at a time
@@ -106,7 +106,7 @@ def processResultAsRaster(k, items, inDir, outDir, preds):
     with rio.open(item) as r:
         profile = r.profile.copy()
         profile.update(count = 1, nodata = -28672, dtype='float32')
-        prediction = preds[k]
+        prediction = np.ascontiguousarray(preds[k])
         if prediction.ndim == 3:
             prediction = prediction.squeeze(0)
         prediction[r.read(1).squeeze() == -28672] = -28672

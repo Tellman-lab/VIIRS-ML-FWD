@@ -7,6 +7,8 @@ import fastai
 from fastai.vision.all import *
 import argparse
 
+MODEL_URL = 'https://github.com/Tellman-lab/VIIRS-ML-FWD/releases/download/v1.0.0/model.pth'
+
 # Import helper functions
 import Helpers.Setup as Setup
 import Helpers.Chip as Chip
@@ -26,22 +28,23 @@ parser.add_argument('--folderNames', type=str, nargs="+") # Names of the folders
 # Optional arguments for setup (with default settings if not specified)
 parser.add_argument('--rootPath', default=os.getcwd(), type=str, help='Root path for work, by default is the parent of the Inference.py code')
 parser.add_argument('--modelWeightsPath', default='ModelWeights/model', type=str, help='Path/filename to the model weights, defined relative to the root path')
+parser.add_argument('--downloadModelWeights', default='n', type=str, help='Whether to download the model weights if not found at the specified path, default is no')
 parser.add_argument('--laadsEmail', default='', type=str, help='Your email for NASA LAADS DAAC: only required if using LAADS DAAC download')
 parser.add_argument('--laadsApikey', default='', type=str, help='Your API key token for NASA LAADS DAAC: only required if using LAADS DAAC download')
 
 # Optional arguments for processing options (with default settings if not specified)
 parser.add_argument('--downloadOrder', default='y', type=str, choices=['y', 'n'], help='Whether to download the data from a LAADS-DAAC submitted order')
-parser.add_argument('--prepFiles', default='y', type=str, choices=['y', 'n'], help='Whether to prepare the files by checking the correct number of files are present')
 parser.add_argument('--resampleFiles', default='y', type=str, choices=['y', 'n'], help='Whether to resample the data to exactly 375 and 750 m resolutions')
+parser.add_argument('--prepFiles', default='y', type=str, choices=['y', 'n'], help='Whether to prepare the files by checking the correct number of files are present')
 parser.add_argument('--chipFiles', default='y', type=str, choices=['y', 'n'], help='Whether to chip the files into 256 x 256 pixel chips required for inference')
 parser.add_argument('--overwriteInf', default='y', type=str, choices=['y', 'n'], help='Whether to overwrite existing inferred chip files')
-parser.add_argument('--maskClouds', default='n', type=str, choices=['y', 'n'], help='Whether to mask clouds in the inferrence, using the VIIRS cloud mask, default is no')
+parser.add_argument('--maskClouds', default=0, type=int, help='Minimum cloud mask value to consider a pixel as cloudy (0-3). Set to 0 for no masking is performed. VIIRS QF1 Cloud Mask (bits 3-2, 2-bit field): 0=Confident Clear, 1=Probably Clear, 2=Probably Cloudy, 3=Confident Cloudy')
 parser.add_argument('--mosaicInf', default='y', type=str, choices=['y', 'n'], help='Whether to mosaic the inferred chip files over space')
 parser.add_argument('--deleteInfChips', default='n', type=str, choices=['y', 'n'], help='Whether to delete the chipped inferred files after mosaicing, default is no')
 parser.add_argument('--device', default='0', type=str, help='Device for inference, e.g. cpu, mps, or gpu devices (numbered) ')
 parser.add_argument('--bs', default=64, type=int, help='Batch size for inference')
-parser.add_argument('--imageBuffer', default=64, type=int, help='Image buffer to use for feathering option, use 0 for no feathering')
-parser.add_argument('--gradientMethod', default='linear', type=str, choices=['linear', 'sin'], help='Method for feathering, either linear or sinusoidal')
+parser.add_argument('--imageBuffer', default=64, type=int, help='Image buffer to use for feathering option, use 0 for no feathering; also controls the gradient method via --gradientMethod')
+parser.add_argument('--gradientMethod', default='linear', type=str, choices=['linear', 'sin'], help='Method for feathering (used when --imageBuffer > 0), either linear or sinusoidal')
 
 # Parse arguments
 args = parser.parse_args()
@@ -74,6 +77,13 @@ if 'ModelWeights' in args.modelWeightsPath:
 else:
     modelPath=Path(args.modelWeightsPath)
 print(f'Using model path/file {modelPath}.')
+
+if not modelPath.with_suffix('.pth').exists():
+    if not args.downloadModelWeights == 'y':
+        raise ValueError(f'Model weights file not found at {modelPath}. Please provide a valid path to the model weights file or set --downloadModelWeights to y to download the model weights.')
+    else:
+        print(f'Model weights file not found at {modelPath}. Downloading model weights.')
+        Setup.downloadModelWeights(modelPath, MODEL_URL)
       
 # Boolean arguments for options in functions
 download = args.downloadOrder == 'y'
@@ -81,7 +91,7 @@ prepare = args.prepFiles == 'y'
 resample = args.resampleFiles == 'y'
 chip = args.chipFiles == 'y'
 overwrite = args.overwriteInf == 'y'
-maskClouds = args.maskClouds == 'y'
+maskClouds = args.maskClouds
 mosaic = args.mosaicInf == 'y'
 deleteInfChips = args.deleteInfChips == 'y'
 
@@ -118,8 +128,8 @@ for o, folderName in enumerate(folderNames):
     if download:
         print('\n---- Downloading ----')
         print(f'Downloading data from LAADS-DAAC.')
-        Setup.downloadOrder(folderName, dataPath, apikey, suppress=True)        
-    
+        Setup.downloadOrder(folderName, dataPath, apikey, suppress=True, check_resampled=resample)
+
     # Resample the bands to exactly 350 and 750 m resolutions
     if resample:
         print('\n---- Resampling ----')
@@ -154,7 +164,7 @@ for o, folderName in enumerate(folderNames):
     # Infer chipped files
     print('\n---- Inference ----')
     print(f'Running inference.')
-    chipsFilesInferred = Infer.InferImages(chipsFilesForInf, modelPath, inputsDir, inferredDir, nbCoresDeepLearning=5, nbCoresTifGeneration=10, batchSize=args.bs, device=args.device, max_val=max_val, norm=norm, gamma=gamma, overwrite=overwrite)
+    chipsFilesInferred = Infer.InferImages(chipsFilesForInf, modelPath, inputsDir, inferredDir, nbCoresDeepLearning=5, nbCoresTifGeneration=1, batchSize=args.bs, device=args.device, max_val=max_val, norm=norm, gamma=gamma, overwrite=overwrite)
 
     # ---------------- MOSAICING ----------------
     
