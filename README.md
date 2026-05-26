@@ -40,14 +40,16 @@ Please follow each of these steps:
 
 ### Order Data
 
-__Order the VIIRS scenes from the [LAADS-DAAC web portal](https://ladsweb.modaps.eosdis.nasa.gov/search/):__ Follow these steps to search for and order VIIRS data from LAADS-DAAC. The pre-processing of the VIIRS scenes is handled on the LAADS DAAC server and the output is a composite VIIRS scene ready for the inference pipeline.
+__Order the VIIRS scenes from the [LAADS-DAAC web portal](https://ladsweb.modaps.eosdis.nasa.gov/search/order/2/VNP09--5200):__ Follow these steps to search for and order VIIRS data from LAADS-DAAC. The pre-processing of the VIIRS scenes is handled on the LAADS DAAC server and the output is a composite VIIRS scene ready for the inference pipeline.
    
-   * __Product:__ search for and select the product 'VNP09' (collection 5200), VIIRS imgary from the Suomi NPP satellite. You may also use the product 'VJ109' (collection 5200) to use VIIRS imagery from the NOAA-20 satellite (note that SNPP and NOAA-20 have different overpass times so the scenes will not be identical).
+   * __Product:__ search for and select the product `VNP09` (collection `5200`), VIIRS imgary from the Suomi NPP satellite. You may also use the product `VJ109` (collection `5200`) to use VIIRS imagery from the NOAA-20 satellite (note that SNPP and NOAA-20 have different overpass times so the scenes will not be identical).
    * __Time:__ enter a single date or date window.
    * __Location:__ enter a region of interest. LAADS-DAAC offers various options inlcuding drawing a box, entering corner coordinates, searching for a country or administrative area.
    * __Files:__ select all files.
    * __Review & order:__ select the 'Apply Post-Processing' drop down. Sds: select bands I1, I2, I3, M3, M4, M11, QF1, and QF2. Geo: check apply from search criteria. Mosaic: check geographically align. Reformat: select geoTIFF. Reproject: select Mercator. Submit order.
-   * __Navigate to [Past Orders](https://ladsweb.modaps.eosdis.nasa.gov/search/history):__ to find the order number for the order you submitted. You will need this order number for the inference pipeline. When the data is ready, the order will show the status 'Available'. This can take as little as several minutes or as long as several days depending on the size of the order and other traffic on the web portal. Note that orders automatically expire after a period of 30 days.
+   * __Navigate to [Past Orders](https://ladsweb.modaps.eosdis.nasa.gov/search/history):__ to find the order number for the order you submitted. You will need this **order number** for the inference pipeline. When the data is ready, the order will show the status `Available`. This can take as little as several minutes or as long as several days depending on the size of the order and other traffic on the web portal. Note that orders automatically expire after a period of time.
+
+Note that if nothing shows up in the search for `VNP09`, following this [link (ladsweb.modaps.eosdis.nasa.gov/search/order/2/VNP09--5200)](https://ladsweb.modaps.eosdis.nasa.gov/search/order/2/VNP09--5200) should lead you to the right search directly.
 
 ### Inference
 
