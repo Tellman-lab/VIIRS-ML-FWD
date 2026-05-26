@@ -57,30 +57,24 @@ __Steps:__
 
 The __[Inference](https://github.com/Tellman-lab/VIIRS-ML-FWD/blob/main/Inference) code__ performs several steps, each of which can optionally be omitted:
 
-1) __Get the LAADS-DAAC VIIRS order:__ automatically extract the pre-processed VIIRS scenes from LAADS-DAAC using the order number you created during the download step and your login credentials (email and API key token). The code uses a simple wget command to extract the data, one .tif file per band. For this option to work, make sure you followed all of the steps described above under Download Data.
-</br>
+1) __Get the LAADS-DAAC VIIRS order:__ automatically extract the pre-processed VIIRS scenes from LAADS-DAAC using the order number you created during the download step and your login credentials (email and API key token). The code uses a simple wget command to extract the data, one .tif file per band. For this option to work, make sure you followed all of the steps described above under Download Data.</br>
    _Arguments:_
       - `--downloadOrder`: set this to `y` to automatically download the order. If `y`, must set `--laadsEmail=<user@domain>` and `--laadsApikey=<apikey>` where `<apikey>` is the EDL Token generated on the LAADS DAAC website.
       - `--folderNames`: the name of the folder containing the data. If `--downloadOrder=y`, must be the order number.
       - `--rootPath`: the absolute path to the location you want to save the data.
-2) __Resample the VIIRS data:__ to exactly 375 m and 750 m spatial resolution as required by the inference model. The reprojected Mercator outputs from LAADS-DAAC are close but not exactly the spatial resolutions. This part performs a simple resampling to ensure the exact specifications are met for inference.
-</br>
+3) __Resample the VIIRS data:__ to exactly 375 m and 750 m spatial resolution as required by the inference model. The reprojected Mercator outputs from LAADS-DAAC are close but not exactly the spatial resolutions. This part performs a simple resampling to ensure the exact specifications are met for inference.</br>
    _Arguments:_
       - `--resampleFiles`: set to `y` to perform resampling
-3) __Prepare the band input files:__ create input .tif files in the format (i.e. folder and naming convention) required for inference. Perform a check to make sure all the required files are present before attempting inference. This is performed separately for every date and granule (i.e., every date-time) in your VIIRS inputs. From hereon, all processing is performed separately for each date and granule (i.e., every unique date-time) and data are created in sub folders named with the corresponding date (in yyyydoy format) and time. Where there is only one file for a given date, the time naming is omitted.
-</br>
+4) __Prepare the band input files:__ create input .tif files in the format (i.e. folder and naming convention) required for inference. Perform a check to make sure all the required files are present before attempting inference. This is performed separately for every date and granule (i.e., every date-time) in your VIIRS inputs. From hereon, all processing is performed separately for each date and granule (i.e., every unique date-time) and data are created in sub folders named with the corresponding date (in yyyydoy format) and time. Where there is only one file for a given date, the time naming is omitted.</br>
    _Arguments:_
       - `--prepFiles`: defaults to `y`, set to `n` if you want to skip the check.
-4) __Chip the band inputs:__ chip the input data into patches of size 256 x 256 pixels as required by the inference model. As in step (3), this is performed separately for every date and granule (i.e., every date-time) in your VIIRS inputs.
-</br>
+5) __Chip the band inputs:__ chip the input data into patches of size 256 x 256 pixels as required by the inference model. As in step (3), this is performed separately for every date and granule (i.e., every date-time) in your VIIRS inputs.</br>
    _Arguments:_
       - `--chipFiles`: defaults to `y`, set to `n` if the input is chipped already.
-5) __Run inference:__ load the model weights and run the inference model on the chipped band inputs. Creates a chipped .tif raster file containing continous values between 0 and 1 for every pixel.
-</br>
+6) __Run inference:__ load the model weights and run the inference model on the chipped band inputs. Creates a chipped .tif raster file containing continous values between 0 and 1 for every pixel.</br>
    _Arguments:_
       - `--overwriteInf`: defaults to `y`, set to `n` if you want the pipeline to exit if the a product exists already.
-6) __Mosaic inferred chips:__ spatially merge the inferred chips to create a single inferred .tif raster output for each unique date-time.
-</br>
+7) __Mosaic inferred chips:__ spatially merge the inferred chips to create a single inferred .tif raster output for each unique date-time.</br>
    _Arguments:_
       - `--imageBuffer`: whether to chip the image with an overlap. This can help prevent edge effects and issues with continuity. Defaults to `64`.
       - `--gradientMethod`: how to combine the overlapping chips. Defaults to `linear`, other choice is `sin` (sinusoidal).
