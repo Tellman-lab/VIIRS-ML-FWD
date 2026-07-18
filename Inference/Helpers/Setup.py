@@ -45,7 +45,7 @@ def _resampled_name(fname):
         return fname.replace('.tif', '_375.tif')
     elif '750m' in stem:
         return fname.replace('.tif', '_750.tif')
-    elif 'QF' in stem and '750' not in stem:
+    elif 'QF' in stem and '750m' not in stem:
         return fname.replace('.tif', '_375.tif')
     return None
 
@@ -188,7 +188,7 @@ def resampleOrder(savePath, deleteOriginal=True):
     filesToDelete.extend(files)
     
     # QF bands
-    files = list(filter(lambda item: item.suffix=='.tif' and 'QF' in item.stem and '750' not in item.stem and '_375.tif' not in item.name, savePath.iterdir()))
+    files = list(filter(lambda item: item.suffix=='.tif' and 'QF' in item.stem and '750m' not in item.stem and '_375.tif' not in item.name, savePath.iterdir()))
     for file in files:
         with riox.open_rasterio(file) as source:
             # QF bands should be exactly 375 m resolution
@@ -201,6 +201,47 @@ def resampleOrder(savePath, deleteOriginal=True):
         for item in filesToDelete:
             if item.is_file():
                 item.unlink()
+
+    # Guard: verify every band file is now at its target resolution.
+    # A silent miss here (e.g. a filename-substring filter failing to catch a file)
+    # leaves a scene on a mismatched grid, which later makes xr.open_mfdataset
+    # outer-join onto a doubled grid full of NaN stripes. Fail loudly instead.
+    verifyResampled(savePath)
+
+
+# Expected resolution (m) per band used by the pipeline. I bands + QF1 -> 375 m, M bands -> 750 m.
+def _expectedResolution(stem):
+    if 'Band_M' in stem or '750m' in stem:
+        return 750
+    if 'Band_I' in stem or '375m' in stem or 'QF1' in stem:
+        return 375
+    return None
+
+# Verify all band files fed to inference sit on their target-resolution grid.
+# tol is tight on purpose: a sub-metre offset (e.g. native 374.82 m vs 375 m) is enough
+# for the grids' coordinates to be disjoint, which is what breaks xr.open_mfdataset.
+def verifyResampled(savePath, tol=0.1):
+    bands = ['I1', 'I2', 'I3', 'M3', 'M4', 'M11', 'QF1']
+    offenders = []
+    for file in savePath.glob('**/*.tif'):
+        if 'chipped' in str(file) or not any(b in file.stem for b in bands):
+            continue
+        # Skip a raw file if its resampled sibling exists (only relevant when
+        # deleteOriginal=False); a *missed* file has no sibling and is still checked.
+        resampled = _resampled_name(file.name)
+        if resampled and resampled != file.name and (file.parent / resampled).exists():
+            continue
+        target = _expectedResolution(file.stem)
+        if target is None:
+            continue
+        with riox.open_rasterio(file) as src:
+            xres, yres = abs(src.rio.resolution()[0]), abs(src.rio.resolution()[1])
+        if abs(xres - target) > tol or abs(yres - target) > tol:
+            offenders.append(f'{file.name}: got ({xres:.2f}, {yres:.2f}) m, expected {target} m')
+    if offenders:
+        raise ValueError(
+            'resampleOrder left files off their target grid (these would corrupt the '
+            'mosaic/open_mfdataset combination):\n  ' + '\n  '.join(offenders))
 
 # Prepare the input data as required by the inference pipeline
 def prepInfInputs(dataPath, inPath):#, deleteOriginal=False):
