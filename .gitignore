@@ -15,3 +15,6 @@ ModelWeights/
 Data_TMP/
 ResultsVis/
 CaseStudies/
+
+# run sh files
+Inference/run_inference_*
