@@ -36,11 +36,17 @@ def MosaicInferredChips(chipsFilesInferred, qf1Files, deleteOriginal=False, mask
                 dataset = dataset.rio.reproject_match(source)
 
                 # Apply cloud mask
-                if maskClouds:
-                    viirsmask = 1 << 3
-                    cloudLayer = source.band_data.values.astype('int16') & viirsmask
-                    mask = (cloudLayer == 0)
-                    dataset = dataset.where(mask)
+                # VIIRS QF1 Cloud Mask (bits 3-2, 2-bit field):
+                #   Bits 3-2 | Value | Meaning
+                #   00       |   0   | Confident Clear
+                #   01       |   1   | Probably Clear
+                #   10       |   2   | Probably Cloudy
+                #   11       |   3   | Confident Cloudy
+                if maskClouds > 0:
+                    cloud_limit = maskClouds
+                    cloud_bits = (np.nan_to_num(source.band_data.values, nan=0).astype('uint16') >> 2) & 0b11
+                    cloud_mask = cloud_bits >= cloud_limit
+                    dataset = dataset.where(~cloud_mask)
 
                 dataset.rio.nodata = -28672
                 dataset = dataset.fillna(-28672)
@@ -55,7 +61,9 @@ def MosaicInferredChips(chipsFilesInferred, qf1Files, deleteOriginal=False, mask
     if deleteOriginal:
         for item in chipsFilesInferred:
             os.remove(item)
-        os.rmdir(chipsFilesInferred[0].parent)
+        # One chipped folder per date, so remove each of them
+        for chipDir in np.unique([item.parent for item in chipsFilesInferred]):
+            os.rmdir(chipDir)
         print('Deleted chipped inferred intermediate files.')
 
     return MosaicFiles

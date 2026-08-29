@@ -1,0 +1,49 @@
+[project]
+name = "viirs-ml-fwd"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "affine>=2.4,<2.5",
+    "beautifulsoup4>=4.12,<4.13",
+    "fastai>=2.7,<2.8",
+    "geopandas>=1.0,<1.1",
+    "ipython>=8.31,<8.32",
+    "numpy>=2.2,<2.3",
+    "pandas>=2.2,<2.3",
+    "pyproj>=3.6,<3.7",
+    "rasterio>=1.3,<1.4",
+    "requests>=2.32,<2.33",
+    "rioxarray>=0.18,<0.19",
+    "scipy>=1.15,<1.16",
+    "tqdm>=4.67,<4.68",
+    "xarray>=2025.1,<2025.2",
+    # CPU-only torch from PyPI; for CUDA see [tool.uv.sources] comment below
+    "torch==2.5.1",
+    "torchvision==0.20.1",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "jupyterlab",
+    "notebook",
+    "ipykernel",
+    "colorcet",
+    "xlsxwriter",
+    "palettable",
+]
+
+[tool.uv]
+package = false
+
+# --- CUDA support ---
+# To install CUDA-enabled PyTorch, uncomment the blocks below and replace
+# "cu124" with your CUDA version (cu118, cu121, cu124, etc.).
+#
+# [tool.uv.sources]
+# torch = [{ index = "pytorch-cuda" }]
+# torchvision = [{ index = "pytorch-cuda" }]
+#
+# [[tool.uv.index]]
+# name = "pytorch-cuda"
+# url = "https://download.pytorch.org/whl/cu124"
+# explicit = true

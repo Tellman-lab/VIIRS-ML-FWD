@@ -12,14 +12,15 @@ python Inference.py \
   --folderNames "yourdatafolder" \
   --rootPath "$ROOT_PATH" \
   --modelWeightsPath "ModelWeights/model" \
+  --downloadModelWeights y \
   --laadsEmail "yournasaearthdata@email.com" \
   --laadsApikey "yourearthdatatoken" \
   --downloadOrder y \
   --prepFiles y \
   --resampleFiles y \
   --chipFiles y \
+  --maskClouds 3 \
   --overwriteInf y \
-  --maskClouds n \
   --mosaicInf y \
   --deleteInfChips n \
   --device 0 \

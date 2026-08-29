@@ -19,7 +19,6 @@ from tqdm import tqdm
 import Helpers.Chip as Chip
 reload(Chip)
 
-# Function to download and unzip the model weights
 def download(url, savePath):
     response = requests.get(url)
     with open(savePath, 'wb') as file:
@@ -33,38 +32,135 @@ def unzip(savePath):
         print(f"File extracted to {unzipPath}.")
     os.remove(savePath)
 
-# Function to download the data from a LAADS-DAAC order
-def downloadOrder(orderNumber, outputPath, apikey, suppress=True):
-    
-    # Clear existing
-    for item in outputPath.iterdir():
-        if item.is_file():
-            item.unlink()
-        elif item.is_dir():
-            shutil.rmtree(item)
-    
-    # Make download request
-    archiveURL = f"https://ladsweb.modaps.eosdis.nasa.gov/archive/orders/{orderNumber}/"
-    access = f"Authorization: Bearer {apikey}"
-    command = f'wget -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=3 {archiveURL} --header "{access}" -P {outputPath}'
-    try:
-        # Split the command into shell arguments using shlex
-        args = shlex.split(command)
-        if suppress:
-            with open('/dev/null', 'w') as devnull:
-                subprocess.run(args, check=True, stdout=devnull, stderr=devnull)
-        else:
-            subprocess.run(args, check=True)
-        print(f'Downloaded order {orderNumber} to {outputPath}.')
-    except subprocess.CalledProcessError as e:
-        print(f"Error occurred while downloading order: {e}")
+def downloadModelWeights(savePath, modelURL):
+    url = modelURL
+    savePath.parent.mkdir(parents=True, exist_ok=True)
+    download(url, savePath.with_suffix('.pth'))
 
-    # Count downloaded files
-    nfiles = len([item for item in outputPath.iterdir() if item.is_file()])
-    if nfiles>0:
-        print(f'Downloaded {nfiles} files.')
+
+def _resampled_name(fname):
+    """Return the post-resampleOrder filename for fname, matching resampleOrder's rename logic."""
+    stem = Path(fname).stem
+    if 'QF' not in stem and '375m' in stem:
+        return fname.replace('.tif', '_375.tif')
+    elif '750m' in stem:
+        return fname.replace('.tif', '_750.tif')
+    elif 'QF' in stem and '750m' not in stem:
+        return fname.replace('.tif', '_375.tif')
+    return None
+
+def _fetch_checksums(archiveURL, orderNumber, headers):
+    """Fetch and parse Checksums_{orderNumber} from LAADS DAAC. Returns {filename: (cksum, size)}."""
+    checksums = {}
+    response = requests.get(f"{archiveURL}checksums_{orderNumber}", headers=headers)
+    if response.status_code != 200:
+        return checksums
+    # Response is HTML; the data lives inside a <pre> block
+    text = response.text
+    pre_start = text.find('<pre>')
+    pre_end = text.find('</pre>')
+    content = text[pre_start + 5:pre_end] if pre_start != -1 and pre_end != -1 else text
+    for line in content.strip().splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split()
+        if len(parts) == 3:
+            try:
+                checksums[parts[2]] = (int(parts[0]), int(parts[1]))
+            except ValueError:
+                continue
+    return checksums
+
+def _verify_file(filepath, expected_cksum, expected_size):
+    """Return True if file exists, matches expected size, and passes cksum."""
+    if not filepath.exists() or filepath.stat().st_size != expected_size:
+        return False
+    result = subprocess.run(['cksum', str(filepath)], capture_output=True, text=True)
+    if result.returncode != 0:
+        return False
+    parts = result.stdout.split()
+    return len(parts) >= 1 and int(parts[0]) == expected_cksum
+
+# Function to download the data from a LAADS-DAAC order
+def downloadOrder(orderNumber, outputPath, apikey, suppress=True, skip_existing=True, check_resampled=False):
+
+    archiveURL = f"https://ladsweb.modaps.eosdis.nasa.gov/archive/orders/{orderNumber}/"
+    headers = {"Authorization": f"Bearer {apikey}"}
+
+    # Fetch manifest
+    checksums = _fetch_checksums(archiveURL, orderNumber, headers)
+    if checksums:
+        print(f'Order {orderNumber} manifest: {len(checksums)} files.')
     else:
-        print(f'Failed to download any files: *stopping*')
+        print('Warning: no checksum file found, falling back to full mirror download.')
+
+    # Determine which files need downloading
+    if checksums:
+        if skip_existing:
+            to_download = {}
+            for fname, cs in checksums.items():
+                # Skip if original is present and checksum matches
+                if _verify_file(outputPath / fname, cs[0], cs[1]):
+                    continue
+                # Skip if the resampled version already exists (original was deleted after prior run)
+                if check_resampled:
+                    resampled = _resampled_name(fname)
+                    if resampled and (outputPath / resampled).exists():
+                        continue
+                to_download[fname] = cs
+            skipped = len(checksums) - len(to_download)
+            if skipped:
+                print(f'Skipping {skipped} files (already present and verified).')
+        else:
+            to_download = dict(checksums)
+            for item in outputPath.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+    else:
+        to_download = {}
+
+    # Download missing/changed files individually, or fall back to wget
+    if to_download:
+        print(f'Downloading {len(to_download)} files...')
+        for fname in to_download:
+            resp = requests.get(f"{archiveURL}{fname}", headers=headers, stream=True)
+            resp.raise_for_status()
+            with open(outputPath / fname, 'wb') as f:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    f.write(chunk)
+        print(f'Downloaded {len(to_download)} files to {outputPath}.')
+    elif checksums:
+        print('All files already present and verified — nothing to download.')
+    else:
+        # No manifest: fall back to wget mirror
+        if not skip_existing:
+            for item in outputPath.iterdir():
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item)
+        access = f"Authorization: Bearer {apikey}"
+        command = f'wget -e robots=off -m -np -R .html,.tmp -nH --cut-dirs=3 {archiveURL} --header "{access}" -P {outputPath}'
+        try:
+            args = shlex.split(command)
+            if suppress:
+                with open('/dev/null', 'w') as devnull:
+                    subprocess.run(args, check=True, stdout=devnull, stderr=devnull)
+            else:
+                subprocess.run(args, check=True)
+            print(f'Downloaded order {orderNumber} to {outputPath}.')
+        except subprocess.CalledProcessError as e:
+            print(f"Error occurred while downloading order: {e}")
+
+    # Verify something is present
+    nfiles = len([item for item in outputPath.iterdir() if item.is_file()])
+    if nfiles > 0:
+        print(f'{nfiles} files present in {outputPath}.')
+    else:
+        print('Failed to download any files: *stopping*')
         sys.exit(1)
 
 
@@ -92,7 +188,7 @@ def resampleOrder(savePath, deleteOriginal=True):
     filesToDelete.extend(files)
     
     # QF bands
-    files = list(filter(lambda item: item.suffix=='.tif' and 'QF' in item.stem and '750' not in item.stem and '_375.tif' not in item.name, savePath.iterdir()))
+    files = list(filter(lambda item: item.suffix=='.tif' and 'QF' in item.stem and '750m' not in item.stem and '_375.tif' not in item.name, savePath.iterdir()))
     for file in files:
         with riox.open_rasterio(file) as source:
             # QF bands should be exactly 375 m resolution
@@ -105,6 +201,47 @@ def resampleOrder(savePath, deleteOriginal=True):
         for item in filesToDelete:
             if item.is_file():
                 item.unlink()
+
+    # Guard: verify every band file is now at its target resolution.
+    # A silent miss here (e.g. a filename-substring filter failing to catch a file)
+    # leaves a scene on a mismatched grid, which later makes xr.open_mfdataset
+    # outer-join onto a doubled grid full of NaN stripes. Fail loudly instead.
+    verifyResampled(savePath)
+
+
+# Expected resolution (m) per band used by the pipeline. I bands + QF1 -> 375 m, M bands -> 750 m.
+def _expectedResolution(stem):
+    if 'Band_M' in stem or '750m' in stem:
+        return 750
+    if 'Band_I' in stem or '375m' in stem or 'QF1' in stem:
+        return 375
+    return None
+
+# Verify all band files fed to inference sit on their target-resolution grid.
+# tol is tight on purpose: a sub-metre offset (e.g. native 374.82 m vs 375 m) is enough
+# for the grids' coordinates to be disjoint, which is what breaks xr.open_mfdataset.
+def verifyResampled(savePath, tol=0.1):
+    bands = ['I1', 'I2', 'I3', 'M3', 'M4', 'M11', 'QF1']
+    offenders = []
+    for file in savePath.glob('**/*.tif'):
+        if 'chipped' in str(file) or not any(b in file.stem for b in bands):
+            continue
+        # Skip a raw file if its resampled sibling exists (only relevant when
+        # deleteOriginal=False); a *missed* file has no sibling and is still checked.
+        resampled = _resampled_name(file.name)
+        if resampled and resampled != file.name and (file.parent / resampled).exists():
+            continue
+        target = _expectedResolution(file.stem)
+        if target is None:
+            continue
+        with riox.open_rasterio(file) as src:
+            xres, yres = abs(src.rio.resolution()[0]), abs(src.rio.resolution()[1])
+        if abs(xres - target) > tol or abs(yres - target) > tol:
+            offenders.append(f'{file.name}: got ({xres:.2f}, {yres:.2f}) m, expected {target} m')
+    if offenders:
+        raise ValueError(
+            'resampleOrder left files off their target grid (these would corrupt the '
+            'mosaic/open_mfdataset combination):\n  ' + '\n  '.join(offenders))
 
 # Prepare the input data as required by the inference pipeline
 def prepInfInputs(dataPath, inPath):#, deleteOriginal=False):

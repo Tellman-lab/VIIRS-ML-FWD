@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# uv
+.venv/
+
+# Data and output folders (created at runtime)
+Data/
+Inputs/
+Inferred/
+ModelWeights/
+Data_TMP/
+ResultsVis/
+CaseStudies/
