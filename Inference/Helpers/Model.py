@@ -63,27 +63,45 @@ class OutConv(nn.Module):
     def forward(self, x):
         return self.conv(x)
 
+class ChannelConv(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1)
+
+    def forward(self, x):
+        return self.conv(x)
+
 # No initial late fusion convolution, but flexible to resampled input resolution at 128 or 256     
 class LateFusionUNetReg(nn.Module):
     def __init__(self, n_i_bands, n_m_bands, n_classes,
-                 input_resolution=128, fusion=True):
+                 input_resolution=128, learned_downsampling=True, input_skip=False):
         super(LateFusionUNetReg, self).__init__()
 
         self.n_i_bands = n_i_bands
         self.n_m_bands = n_m_bands
         self.n_classes = n_classes
         self.input_resolution = input_resolution
+        self.learned_downsampling = learned_downsampling
+        self.input_skip = input_skip
 
+        # Verify settings
         if input_resolution not in [128, 256]:
             raise ValueError("input_resolution must be 128 or 256")
 
-        if input_resolution == 256 and fusion:
-            raise ValueError("Late fusion convolution not compatible with 256 input resolution")
+        if learned_downsampling and input_resolution != 128:
+            raise ValueError("learned_downsampling=True requires input_resolution=128")
+
+        if learned_downsampling and n_i_bands == 0:
+            raise ValueError("learned_downsampling=True requires at least one I band")
+
+        if input_skip and input_resolution == 128 and not learned_downsampling:
+            raise ValueError("input_skip=True with input_resolution=128 requires "
+                             "learned_downsampling=True to preserve the 256x256 I-band input")
 
         n_input_channels = n_i_bands + n_m_bands
 
         # Late fusion convolution to downsample I bands from 256 to 128
-        if n_i_bands > 0 and fusion:
+        if n_i_bands > 0 and learned_downsampling:
             self.firstStep = nn.Conv2d(
                 n_i_bands, n_i_bands,
                 kernel_size=3,
@@ -114,6 +132,7 @@ class LateFusionUNetReg(nn.Module):
             self.up2 = Up(512, 256, 256)
             self.up3 = Up(256, 128, 128)
             self.up4 = Up(128, 64, 64)
+            self.up5 = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
 
         elif input_resolution == 256:
 
@@ -123,10 +142,14 @@ class LateFusionUNetReg(nn.Module):
             self.up4 = Up(256, 128, 128)
             self.up5 = Up(128, 64, 64)
 
-        self.outc = nn.Sequential(
-            OutConv(64, n_classes),
-            SigmoidRange(0, 1)
-        )
+        # Separate full-resolution I-band skip connection
+        if n_i_bands > 0 and input_skip:
+            self.learned_channels_ds = ChannelConv(n_i_bands, 1)
+
+        # Final prediction combines decoder output and x0 and skip_input True
+        decoder_channels = 32 if input_resolution == 128 else 64
+        out_channels = decoder_channels + (1 if input_skip and n_i_bands > 0 else 0)
+        self.outc = nn.Sequential(OutConv(out_channels, n_classes), SigmoidRange(0, 1))
 
     def forward(self, x):
 
@@ -134,24 +157,26 @@ class LateFusionUNetReg(nn.Module):
         # Prepare inputs
         # ---------------------------------------------------------
 
+        x0 = None
+
+        if self.n_i_bands > 0 and self.input_skip:
+            # Full-resolution skip from the original I bands
+            x0 = self.learned_channels_ds(x[0])
+
+        if self.n_i_bands > 0:
+            i = x[0]
+            if self.learned_downsampling:
+                i = self.firstStep(i)
+
+        if self.n_m_bands > 0:
+            m = x[1]
+
         if self.n_i_bands > 0 and self.n_m_bands > 0:
-
-            # Both inputs should already have the same spatial
-            # resolution by the time they reach the model
-            x = torch.cat((x[0], x[1]), dim=1)
-
+            x = torch.cat((i, m), dim=1)
         elif self.n_i_bands > 0:
-
-            x = x[0]
-
-        elif self.n_m_bands > 0:
-
-            x = x[1]
-
+            x = i
         else:
-            raise ValueError(
-                "At least one I or M band must be provided."
-            )
+            x = m
 
         # ---------------------------------------------------------
         # Encoder
@@ -173,14 +198,7 @@ class LateFusionUNetReg(nn.Module):
             x = self.up2(x, x3)
             x = self.up3(x, x2)
             x = self.up4(x, x1)
-
-            # 128 -> 256
-            x = F.interpolate(
-                x,
-                scale_factor=2,
-                mode='bilinear',
-                align_corners=False
-            )
+            x = self.up5(x)
 
         else:
 
@@ -194,27 +212,31 @@ class LateFusionUNetReg(nn.Module):
             x = self.up4(x, x2)
             x = self.up5(x, x1)
 
+        # Combine decoder features with original I-band skip
+        if x0 is not None:
+            x = torch.cat((x, x0), dim=1)
+
         return self.outc(x)
 
-    def use_checkpointing(self):
-        self.inc = torch.utils.checkpoint(self.inc)
-        self.down1 = torch.utils.checkpoint(self.down1)
-        self.down2 = torch.utils.checkpoint(self.down2)
-        self.down3 = torch.utils.checkpoint(self.down3)
-        self.down4 = torch.utils.checkpoint(self.down4)
+    # def use_checkpointing(self):
+    #     self.inc = torch.utils.checkpoint(self.inc)
+    #     self.down1 = torch.utils.checkpoint(self.down1)
+    #     self.down2 = torch.utils.checkpoint(self.down2)
+    #     self.down3 = torch.utils.checkpoint(self.down3)
+    #     self.down4 = torch.utils.checkpoint(self.down4)
 
-        if self.input_resolution == 256:
-            self.down5 = torch.utils.checkpoint(self.down5)
-            self.up1 = torch.utils.checkpoint(self.up1)
-            self.up2 = torch.utils.checkpoint(self.up2)
-            self.up3 = torch.utils.checkpoint(self.up3)
-            self.up4 = torch.utils.checkpoint(self.up4)
-            self.up5 = torch.utils.checkpoint(self.up5)
+    #     if self.input_resolution == 256:
+    #         self.down5 = torch.utils.checkpoint(self.down5)
+    #         self.up1 = torch.utils.checkpoint(self.up1)
+    #         self.up2 = torch.utils.checkpoint(self.up2)
+    #         self.up3 = torch.utils.checkpoint(self.up3)
+    #         self.up4 = torch.utils.checkpoint(self.up4)
+    #         self.up5 = torch.utils.checkpoint(self.up5)
 
-        else:
-            self.up1 = torch.utils.checkpoint(self.up1)
-            self.up2 = torch.utils.checkpoint(self.up2)
-            self.up3 = torch.utils.checkpoint(self.up3)
-            self.up4 = torch.utils.checkpoint(self.up4)
+    #     else:
+    #         self.up1 = torch.utils.checkpoint(self.up1)
+    #         self.up2 = torch.utils.checkpoint(self.up2)
+    #         self.up3 = torch.utils.checkpoint(self.up3)
+    #         self.up4 = torch.utils.checkpoint(self.up4)
 
-        self.outc = torch.utils.checkpoint(self.outc)
+    #     self.outc = torch.utils.checkpoint(self.outc)

@@ -13,7 +13,7 @@ from Helpers.MultiChannel import *
 
 # Fubction to run inference, allowing for different transformations or clip values
 def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTifGeneration, batchSize, device, 
-                max_val, i_bands, m_bands, input_resolution=128, fusion=True, norm='gamma', gamma=0.4, overwrite=True):
+                max_val, i_bands, m_bands, input_resolution=128, learned_downsampling=True, input_skip=False, norm='gamma', gamma=0.4, overwrite=True):
 
     if device not in ['cpu', 'mps']:
         device = int(device)
@@ -58,7 +58,9 @@ def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTif
     # Load model
     print(f'Loading model from: {modelPath}.')
     # model = LateFusionUNetReg(6, 1)
-    model = LateFusionUNetReg(n_i_bands=len(i_bands),  n_m_bands=len(m_bands), n_classes=1, input_resolution=input_resolution, fusion=fusion)
+    model = LateFusionUNetReg(n_i_bands=len(i_bands),  n_m_bands=len(m_bands), n_classes=1, 
+                              input_resolution=input_resolution, learned_downsampling=learned_downsampling,
+                              input_skip=input_skip)
     acc_metric = [mae, mse, rmse, R2Score()]
     loss_fn = L1LossFlat()
     learn = Learner(dl, model, loss_func = loss_fn, metrics=acc_metric, opt_func=ranger)

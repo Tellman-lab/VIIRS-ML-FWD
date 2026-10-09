@@ -46,9 +46,9 @@ parser.add_argument('--bs', default=64, type=int, help='Batch size for inference
 parser.add_argument('--imageBuffer', default=64, type=int, help='Image buffer to use for feathering option, use 0 for no feathering; also controls the gradient method via --gradientMethod')
 parser.add_argument('--gradientMethod', default='linear', type=str, choices=['linear', 'sin'], help='Method for feathering (used when --imageBuffer > 0), either linear or sinusoidal')
 
-# Newly added argument for resolution of model input features 
-parser.add_argument('--inputResolution', default=128, type=int, choices=[128, 256], help='Resolution (number of pixels) of input features to model, either at I band (finer, 256 pixels) or M band (coarser, 128 pixels) resolution')
-parser.add_argument('--fusion', default='y', type=str, choices=['y', 'n'], help='Whether to perform the late fusion initial convolution of the I bands to 128 pixel size')
+# Newly added argument for learned downsampling or simple resampling of model input features 
+# parser.add_argument('--inputResolution', default=128, type=int, choices=[128, 256], help='Resolution (number of pixels) of input features to model, either at I band (finer, 256 pixels) or M band (coarser, 128 pixels) resolution')
+parser.add_argument('--learned_downsampling', default='y', type=str, choices=['y', 'n'], help='Whether to perform the late fusion initial convolution of the I bands to 128 pixel size')
 
 
 # Parse arguments
@@ -113,8 +113,16 @@ i_bands = ['I1', 'I2', 'I3']
 m_bands = ['M3', 'M4', 'M11']
 
 # Whether to use initial late fusion convolution or to perform resampling to input_resolution instead
-fusion = args.fusion == 'y'
-input_resolution = args.inputRes
+# If learned_downsampling, then I band passed as 256 and after convolution has 128
+# If not using learned_downsampling, then M band resampled to 256, all bands inputs at 256, with additional skip connection
+learned_downsampling = args.learned_downsampling == 'y'
+if learned_downsampling:
+    input_resolution = 128
+    input_skip = False
+else:
+    input_resolution = 256
+    input_skip = True
+
 
 
 # ---------------- BEGIN LOOP OVER ORDERS ---------------- 
@@ -145,7 +153,7 @@ for o, folderName in enumerate(folderNames):
         print(f'Downloading data from LAADS-DAAC.')
         Setup.downloadOrder(folderName, dataPath, apikey, suppress=True, check_resampled=resample)
 
-    # Resample the bands to exactly 350 and 750 m resolutions
+    # Resample the bands to exactly 375 and 750 m resolutions
     if resample:
         print('\n---- Resampling ----')
         print(f'Resampling data to exact required resolutions.')
@@ -180,7 +188,8 @@ for o, folderName in enumerate(folderNames):
     print('\n---- Inference ----')
     print(f'Running inference.')
     chipsFilesInferred = Infer.InferImages(chipsFilesForInf, modelPath, inputsDir, inferredDir, nbCoresDeepLearning=5, nbCoresTifGeneration=1, batchSize=args.bs, device=args.device, 
-                                           max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, fusion=fusion, norm=norm, gamma=gamma, overwrite=overwrite)
+                                           max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, 
+                                           learned_downsampling=learned_downsampling, input_skip=input_skip, norm=norm, gamma=gamma, overwrite=overwrite)
 
     # ---------------- MOSAICING ----------------
     

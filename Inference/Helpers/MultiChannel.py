@@ -5,7 +5,7 @@ import numpy as np
 from rasterio.enums import Resampling
 
 # Fuinction to read image values, including allowing for different normalization schemes and clip values 
-def readSatImage(fn, max_val, i_bands, m_bands, input_resolution=128, norm='gamma', gamma=0.4):
+def readSatImage(fn, max_val, i_bands, m_bands, learned_downsampling=True, norm='gamma', gamma=0.4):
     fromValsI=[-100, max_val]
     fromValsM=[-100, max_val]
 
@@ -13,9 +13,12 @@ def readSatImage(fn, max_val, i_bands, m_bands, input_resolution=128, norm='gamm
     i_bands = [band for band in ['I1', 'I2', 'I3'] if band in i_bands]
     m_bands = [band for band in ['M3', 'M4', 'M11'] if band in m_bands]
 
+    i_res = 256
+    m_res = 128 if learned_downsampling else 256
+
     # Allocate only the requested number of bands - at either 128 or 256 pixels res
-    img = np.empty((len(i_bands), input_resolution, input_resolution), dtype=np.float32)
-    img2 = np.empty((len(m_bands), input_resolution, input_resolution), dtype=np.float32)
+    img = np.empty((len(i_bands), i_res, i_res), dtype=np.float32)
+    img2 = np.empty((len(m_bands), m_res, m_res), dtype=np.float32)
     
     # Read in I bands
     for k, bandName in enumerate(i_bands):
@@ -23,14 +26,14 @@ def readSatImage(fn, max_val, i_bands, m_bands, input_resolution=128, norm='gamm
         with rio.open(imgPath) as r:
             
             # Optional resampling
-            if r.height == input_resolution and r.width == input_resolution:
+            if r.height == i_res and r.width == i_res:
                 data = r.read(1)
             else:
-                if r.height > input_resolution: # from fine to coarse (256 to 128), use average resampling
+                if r.height > i_res: # from fine to coarse (256 to 128), use average resampling
                     resampling_method = Resampling.average
                 else: # from coarse to fine (128 to 256), use bilinear interpolation
                     resampling_method = Resampling.bilinear
-                data = r.read(1, out_shape=(input_resolution, input_resolution), resampling=resampling_method)
+                data = r.read(1, out_shape=(i_res, i_res), resampling=resampling_method)
             
             data = FillMissingValues(data)
             img[k,::] = normalizeBand(data, fromValsI, norm=norm, gamma=gamma)
@@ -41,14 +44,14 @@ def readSatImage(fn, max_val, i_bands, m_bands, input_resolution=128, norm='gamm
         with rio.open(imgPath) as r:
 
             # Optional resampling
-            if r.height == input_resolution and r.width == input_resolution:
+            if r.height == m_res and r.width == m_res:
                 data = r.read(1)
             else:
-                if r.height > input_resolution: # from fine to coarse (256 to 128), use average resampling
+                if r.height > m_res: # from fine to coarse (256 to 128), use average resampling
                     resampling_method = Resampling.average
                 else: # from coarse to fine (128 to 256), use bilinear interpolation
                     resampling_method = Resampling.bilinear
-                data = r.read(1, out_shape=(input_resolution, input_resolution), resampling=resampling_method)
+                data = r.read(1, out_shape=(m_res, m_res), resampling=resampling_method)
             
             data = FillMissingValues(data)
             img2[k,::] = normalizeBand(data, fromValsM, norm=norm, gamma=gamma)
@@ -102,16 +105,16 @@ def normalizeBand(data, fromVals, norm='gamma', gamma=0.4):
         normed = np.interp(data, fromVals, (0., 1.))
     return np.clip(normed, 0., 1.)
 
-def make_multi_channel_create(max_val, i_bands, m_bands, input_resolution, norm='gamma', gamma=0.4):
+def make_multi_channel_create(max_val, i_bands, m_bands, learned_downsampling=True, norm='gamma', gamma=0.4):
     def _create(fn):
-        img = readSatImage(fn=fn, max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, norm=norm, gamma=gamma)
+        img = readSatImage(fn=fn, max_val=max_val, i_bands=i_bands, m_bands=m_bands, learned_downsampling=learned_downsampling, norm=norm, gamma=gamma)
         return [MultiChannelTensorImage(img[0]), MultiChannelTensorImage(img[1])]
     return _create
 
 class MultiChannelTensorImage(TensorImage):
     @classmethod
     def create(cls, fn, **kwargs) ->None:
-        img = readSatImage(fn=fn, max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, norm=norm, gamma=gamma)
+        img = readSatImage(fn=fn, max_val=max_val, i_bands=i_bands, m_bands=m_bands, learned_downsampling=learned_downsampling, norm=norm, gamma=gamma)
         return [cls(img[0]), cls(img[1])]
 
     def __repr__(self): return f'{self.__class__.__name__} size={"x".join([str(d) for d in self.shape])}'
