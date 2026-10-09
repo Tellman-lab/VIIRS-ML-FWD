@@ -46,6 +46,11 @@ parser.add_argument('--bs', default=64, type=int, help='Batch size for inference
 parser.add_argument('--imageBuffer', default=64, type=int, help='Image buffer to use for feathering option, use 0 for no feathering; also controls the gradient method via --gradientMethod')
 parser.add_argument('--gradientMethod', default='linear', type=str, choices=['linear', 'sin'], help='Method for feathering (used when --imageBuffer > 0), either linear or sinusoidal')
 
+# Newly added argument for resolution of model input features 
+parser.add_argument('--inputResolution', default=128, type=int, choices=[128, 256], help='Resolution (number of pixels) of input features to model, either at I band (finer, 256 pixels) or M band (coarser, 128 pixels) resolution')
+parser.add_argument('--fusion', default='y', type=str, choices=['y', 'n'], help='Whether to perform the late fusion initial convolution of the I bands to 128 pixel size')
+
+
 # Parse arguments
 args = parser.parse_args()
 print('\n----------------- Running with arguments -----------------')
@@ -100,6 +105,16 @@ pad_value=-28672
 max_val=16000
 norm='gamma'
 gamma=0.4
+
+# Newly added arguments for flexible input bands and input_resolution (which induces resampling)
+
+# Band inputs - these could be passed as arg parse function but for now retain all six bands
+i_bands = ['I1', 'I2', 'I3']
+m_bands = ['M3', 'M4', 'M11']
+
+# Whether to use initial late fusion convolution or to perform resampling to input_resolution instead
+fusion = args.fusion == 'y'
+input_resolution = args.inputRes
 
 
 # ---------------- BEGIN LOOP OVER ORDERS ---------------- 
@@ -164,7 +179,8 @@ for o, folderName in enumerate(folderNames):
     # Infer chipped files
     print('\n---- Inference ----')
     print(f'Running inference.')
-    chipsFilesInferred = Infer.InferImages(chipsFilesForInf, modelPath, inputsDir, inferredDir, nbCoresDeepLearning=5, nbCoresTifGeneration=1, batchSize=args.bs, device=args.device, max_val=max_val, norm=norm, gamma=gamma, overwrite=overwrite)
+    chipsFilesInferred = Infer.InferImages(chipsFilesForInf, modelPath, inputsDir, inferredDir, nbCoresDeepLearning=5, nbCoresTifGeneration=1, batchSize=args.bs, device=args.device, 
+                                           max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, fusion=fusion, norm=norm, gamma=gamma, overwrite=overwrite)
 
     # ---------------- MOSAICING ----------------
     

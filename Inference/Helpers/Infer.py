@@ -12,7 +12,8 @@ from Helpers.Model import LateFusionUNetReg as LateFusionUNetReg
 from Helpers.MultiChannel import *
 
 # Fubction to run inference, allowing for different transformations or clip values
-def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTifGeneration, batchSize, device, max_val, norm='gamma', gamma=0.4, overwrite=True):
+def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTifGeneration, batchSize, device, 
+                max_val, i_bands, m_bands, input_resolution=128, fusion=True, norm='gamma', gamma=0.4, overwrite=True):
 
     if device not in ['cpu', 'mps']:
         device = int(device)
@@ -44,7 +45,8 @@ def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTif
         
     # Create image blocks
     # ImageBlock = MultiChannelImageBlock()
-    image_create_fn = make_multi_channel_create(max_val=max_val, norm=norm, gamma=gamma)
+    image_create_fn = make_multi_channel_create(max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, 
+                                                norm=norm, gamma=gamma)
     ImageBlock = TransformBlock(type_tfms=image_create_fn)
     MaskBlock = TransformBlock(type_tfms=[lambda x: TensorMask(torch.from_numpy(np.ones((256,256))))])
 
@@ -55,7 +57,8 @@ def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTif
 
     # Load model
     print(f'Loading model from: {modelPath}.')
-    model = LateFusionUNetReg(6, 1)
+    # model = LateFusionUNetReg(6, 1)
+    model = LateFusionUNetReg(n_i_bands=len(i_bands),  n_m_bands=len(m_bands), n_classes=1, input_resolution=input_resolution, fusion=fusion)
     acc_metric = [mae, mse, rmse, R2Score()]
     loss_fn = L1LossFlat()
     learn = Learner(dl, model, loss_func = loss_fn, metrics=acc_metric, opt_func=ranger)

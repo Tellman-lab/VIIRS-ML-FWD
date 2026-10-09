@@ -2,27 +2,54 @@ import fastai
 from fastai.vision.all import *
 import rasterio as rio
 import numpy as np
+from rasterio.enums import Resampling
 
 # Fuinction to read image values, including allowing for different normalization schemes and clip values 
-def readSatImage(fn, max_val, norm='gamma', gamma=0.4):
+def readSatImage(fn, max_val, i_bands, m_bands, input_resolution=128, norm='gamma', gamma=0.4):
     fromValsI=[-100, max_val]
     fromValsM=[-100, max_val]
 
-    # Read in I bands at 375 m resolution
-    img = np.empty((3,256,256))
-    for k, bandName in enumerate(['I1', 'I2', 'I3']):
+    # Keep a consistent ordering of available bands
+    i_bands = [band for band in ['I1', 'I2', 'I3'] if band in i_bands]
+    m_bands = [band for band in ['M3', 'M4', 'M11'] if band in m_bands]
+
+    # Allocate only the requested number of bands - at either 128 or 256 pixels res
+    img = np.empty((len(i_bands), input_resolution, input_resolution), dtype=np.float32)
+    img2 = np.empty((len(m_bands), input_resolution, input_resolution), dtype=np.float32)
+    
+    # Read in I bands
+    for k, bandName in enumerate(i_bands):
         imgPath = fn.as_posix().replace('I1', bandName)
         with rio.open(imgPath) as r:
-            data = r.read(1)
+            
+            # Optional resampling
+            if r.height == input_resolution and r.width == input_resolution:
+                data = r.read(1)
+            else:
+                if r.height > input_resolution: # from fine to coarse (256 to 128), use average resampling
+                    resampling_method = Resampling.average
+                else: # from coarse to fine (128 to 256), use bilinear interpolation
+                    resampling_method = Resampling.bilinear
+                data = r.read(1, out_shape=(input_resolution, input_resolution), resampling=resampling_method)
+            
             data = FillMissingValues(data)
             img[k,::] = normalizeBand(data, fromValsI, norm=norm, gamma=gamma)
 
-    # Read in M bands at 750 m resolution
-    img2 = np.empty((3,128,128))
-    for k, bandName in enumerate(['M3', 'M4', 'M11']):
+    # Read in M bands
+    for k, bandName in enumerate(m_bands):
         imgPath = fn.as_posix().replace('I1', bandName)
         with rio.open(imgPath) as r:
-            data = r.read(1)
+
+            # Optional resampling
+            if r.height == input_resolution and r.width == input_resolution:
+                data = r.read(1)
+            else:
+                if r.height > input_resolution: # from fine to coarse (256 to 128), use average resampling
+                    resampling_method = Resampling.average
+                else: # from coarse to fine (128 to 256), use bilinear interpolation
+                    resampling_method = Resampling.bilinear
+                data = r.read(1, out_shape=(input_resolution, input_resolution), resampling=resampling_method)
+            
             data = FillMissingValues(data)
             img2[k,::] = normalizeBand(data, fromValsM, norm=norm, gamma=gamma)
             
@@ -75,16 +102,16 @@ def normalizeBand(data, fromVals, norm='gamma', gamma=0.4):
         normed = np.interp(data, fromVals, (0., 1.))
     return np.clip(normed, 0., 1.)
 
-def make_multi_channel_create(max_val, norm='gamma', gamma=0.4):
+def make_multi_channel_create(max_val, i_bands, m_bands, input_resolution, norm='gamma', gamma=0.4):
     def _create(fn):
-        img = readSatImage(fn=fn, max_val=max_val, norm=norm, gamma=gamma)
+        img = readSatImage(fn=fn, max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, norm=norm, gamma=gamma)
         return [MultiChannelTensorImage(img[0]), MultiChannelTensorImage(img[1])]
     return _create
 
 class MultiChannelTensorImage(TensorImage):
     @classmethod
     def create(cls, fn, **kwargs) ->None:
-        img = readSatImage(fn=fn, max_val=max_val, norm=norm, gamma=gamma)
+        img = readSatImage(fn=fn, max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, norm=norm, gamma=gamma)
         return [cls(img[0]), cls(img[1])]
 
     def __repr__(self): return f'{self.__class__.__name__} size={"x".join([str(d) for d in self.shape])}'
