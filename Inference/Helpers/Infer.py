@@ -13,7 +13,9 @@ from Helpers.MultiChannel import *
 
 # Fubction to run inference, allowing for different transformations or clip values
 def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTifGeneration, batchSize, device, 
-                max_val, i_bands, m_bands, input_resolution=128, learned_downsampling=True, input_skip=False, norm='gamma', gamma=0.4, overwrite=True):
+                max_val, i_bands, m_bands, 
+                input_resolution=128, learned_downsampling=True, input_skip=False, 
+                norm='gamma', gamma=0.4, overwrite=True):
 
     if device not in ['cpu', 'mps']:
         device = int(device)
@@ -45,7 +47,7 @@ def InferImages(items, modelPath, inDir, outDir, nbCoresDeepLearning, nbCoresTif
         
     # Create image blocks
     # ImageBlock = MultiChannelImageBlock()
-    image_create_fn = make_multi_channel_create(max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, 
+    image_create_fn = make_multi_channel_create(max_val=max_val, i_bands=i_bands, m_bands=m_bands, learned_downsampling=learned_downsampling, 
                                                 norm=norm, gamma=gamma)
     ImageBlock = TransformBlock(type_tfms=image_create_fn)
     MaskBlock = TransformBlock(type_tfms=[lambda x: TensorMask(torch.from_numpy(np.ones((256,256))))])

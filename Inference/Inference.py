@@ -47,9 +47,7 @@ parser.add_argument('--imageBuffer', default=64, type=int, help='Image buffer to
 parser.add_argument('--gradientMethod', default='linear', type=str, choices=['linear', 'sin'], help='Method for feathering (used when --imageBuffer > 0), either linear or sinusoidal')
 
 # Newly added argument for learned downsampling or simple resampling of model input features 
-# parser.add_argument('--inputResolution', default=128, type=int, choices=[128, 256], help='Resolution (number of pixels) of input features to model, either at I band (finer, 256 pixels) or M band (coarser, 128 pixels) resolution')
-parser.add_argument('--learned_downsampling', default='y', type=str, choices=['y', 'n'], help='Whether to perform the late fusion initial convolution of the I bands to 128 pixel size')
-
+parser.add_argument('--learned_downsampling', default='y', type=str, choices=['y', 'n'], help='Whether to perform the late fusion initial convolution of the I bands to 128 pixel size, or if not then perform resampling to the I bands (256 pixels) resolution')
 
 # Parse arguments
 args = parser.parse_args()
@@ -188,8 +186,9 @@ for o, folderName in enumerate(folderNames):
     print('\n---- Inference ----')
     print(f'Running inference.')
     chipsFilesInferred = Infer.InferImages(chipsFilesForInf, modelPath, inputsDir, inferredDir, nbCoresDeepLearning=5, nbCoresTifGeneration=1, batchSize=args.bs, device=args.device, 
-                                           max_val=max_val, i_bands=i_bands, m_bands=m_bands, input_resolution=input_resolution, 
-                                           learned_downsampling=learned_downsampling, input_skip=input_skip, norm=norm, gamma=gamma, overwrite=overwrite)
+                                           max_val=max_val, i_bands=i_bands, m_bands=m_bands, 
+                                           input_resolution=input_resolution, learned_downsampling=learned_downsampling, input_skip=input_skip, 
+                                           norm=norm, gamma=gamma, overwrite=overwrite)
 
     # ---------------- MOSAICING ----------------
     
